@@ -12,6 +12,8 @@ class Viewer(object):
     def __init__(self):
         self.image_queue = Queue()
         self.pose_queue = Queue()
+        self.uwb_queue = Queue()
+        self.feature_point_queue = Queue()
 
         self.view_thread = Process(target=self.view)
         self.view_thread.start()
@@ -22,6 +24,10 @@ class Viewer(object):
             return
         self.pose_queue.put(pose.matrix())
 
+    def update_anchor(self, anchor_pos):
+        if anchor_pos is None:
+            return
+        self.uwb_queue.put(anchor_pos.uwb_positions)
 
     def update_image(self, image):
         if image is None:
@@ -30,6 +36,10 @@ class Viewer(object):
             image = np.repeat(image[..., np.newaxis], 3, axis=2)
         self.image_queue.put(image)
 
+    def update_feature_points(self, feature_points):
+        if feature_points is None:
+            return
+        self.feature_point_queue.put(feature_points)
 
     def draw_text(self, text, x, y):
         """
@@ -84,6 +94,10 @@ class Viewer(object):
 
         while not pangolin.ShouldQuit():
 
+            if not self.uwb_queue.empty():
+                while not self.uwb_queue.empty():
+                    uwb_positions = self.uwb_queue.get()
+                self.uwb_anchors = uwb_positions
 
             if not self.pose_queue.empty():
                 while not self.pose_queue.empty():
@@ -99,7 +113,6 @@ class Viewer(object):
                 image = img.copy()
 
 
-
             gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
             gl.glClearColor(1.0, 1.0, 1.0, 1.0)
             dcam.Activate(scam)
@@ -113,6 +126,13 @@ class Viewer(object):
                 gl.glLineWidth(1)
                 gl.glColor3f(0.0, 0.0, 1.0)
                 pangolin.DrawCameras(np.array([camera]), 0.5)
+
+                # Display UWB anchor coordinates at the bottom right corner as a vector
+                for i, anchor in enumerate(self.uwb_anchors):
+                    # Set the x and y screen coordinates for the text
+                    y_position = 140 - i * 20  # Adjust Y position for each anchor
+                    anchor_text = f"Anchor {i + 1}: ({anchor[0]:.2f}, {anchor[1]:.2f}, {anchor[2]:.2f})"
+                    self.draw_text(anchor_text, 850, y_position)  # Adjust x, y as needed for screen
 
                 # Get the coordinates of the robot pose
                 pose_position = camera[:3, 3]
